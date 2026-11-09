@@ -1,0 +1,2 @@
+index,ensemble_size,Nt_SDE,var_split,eps_a,eps_b,inflation,r_loc,N_iter,eta1,eta2,mode,likelihood_diag_blend,rtps_relax,ns_type,solver_type
+0,100,200,1.0,0.001,0.001,0.9,2.0,1,0.5,0.5,legacy,0.0,0.3,linear,0

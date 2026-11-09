@@ -1,0 +1,5 @@
+method,rmse_total,rmse_obs,rmse_unobs
+LETKF,1.4135,1.1398,1.6185
+EnSF,1.3028,0.8851,1.6146
+IEnSF(No iter),0.707,0.5695,0.8183
+IEnSF(iter=4),0.6835,0.519,0.8122

@@ -1,0 +1,155 @@
+================================================================================
+L96 1000D DATA ASSIMILATION EXPERIMENT SETUP
+(l96_1000d_rev — linear and atan observation operators)
+================================================================================
+
+1. DYNAMICAL MODEL
+--------------------------------------------------------------------------------
+  Model:        Lorenz-96 (L96), 1000-dimensional state
+  Integrator:   4th-order Runge-Kutta (rk4), fixed step dt = 0.02 model time units
+  State clip:   ensemble forecast members clipped to [-50, 50] each step
+
+2. PROBLEM (TRUTH TRAJECTORY) INITIALIZATION
+--------------------------------------------------------------------------------
+  For each Monte Carlo repetition rep_id = 0, 1, ...:
+
+    - Load a precomputed true initial state from
+        {state_init_dir}/state_init_d_{dim_x}_rep_10.npy
+      where state_init_dir = ../../data (see param_problem.csv).
+
+    - The file contains 10 independent truth trajectories (rows). Repetition
+      rep_id uses row rep_id as the true initial condition x_true(t=0).
+
+    - The true state is then integrated forward with the L96 model. No noise
+      is added to the truth during the forecast steps.
+
+  This setup follows the JCP review rerun protocol (review_utils.py): truth
+  starts on the L96 attractor but is not tied to the ensemble mean.
+
+3. ENSEMBLE INITIALIZATION
+--------------------------------------------------------------------------------
+  Mode: init_mode = attractor  (set in param_problem.csv)
+
+  For each repetition, with torch.manual_seed(rep_id):
+
+    - Load a pool of attractor states from
+        {state_init_dir}/ensemble_pool_d_{dim_x}.npy
+
+    - Draw ensemble_size distinct pool indices (without replacement) using
+      numpy RNG seeded by rep_id.
+
+    - Ensemble members are those pool states. They are NOT centered on the
+      true state and do NOT use truth + Gaussian perturbation.
+
+  Alternative (not used in current runs):
+    init_mode = near_truth  →  x_i = x_true + N(0, init_perturb^2), init_perturb=0.1
+
+  Rationale: attractor initialization gives a realistic "poor" initial spread
+  representative of states on the L96 attractor, rather than a tight cluster
+  around the truth.
+
+4. OBSERVATION OPERATOR AND SPARSITY PATTERN
+--------------------------------------------------------------------------------
+  Both cases observe a sparse subset of grid points on a regular lattice.
+
+  Linear case (linear/):
+    y = x[select_dim]                     (direct state observation)
+    obs_every = 4  →  observe dims 0, 4, 8, ..., 996  (250 of 1000 dims)
+
+  Atan case (atan/):
+    y = atan(x[select_dim])               (nonlinear observation)
+    obs_every = 2  →  observe dims 0, 2, 4, ..., 998  (500 of 1000 dims)
+
+  Observation noise:  y_obs = y_true + N(0, obs_sigma^2)
+    linear: obs_sigma = 0.1
+    atan:   obs_sigma = 0.05
+
+  Assimilation frequency: every obs_gap model steps (obs_gap = 10), skipping t=0.
+
+5. SHARED EXPERIMENT SETTINGS (param_problem.csv)
+--------------------------------------------------------------------------------
+                          LINEAR              ATAN
+  -----------------------------------------------------------------
+  dim_x                   1000                1000
+  dt                      0.02                0.02
+  N_step                  1500                1500
+  experiment duration     30.0                20.0   (N_step * dt)
+  obs_gap                 10                  10
+  DA cycles (approx.)     149                 99     (every 10 steps, t>0)
+  run_up2 (in CSV)        10                  10
+  run_up2 (single runs)   6                   6      (overridden in notebooks)
+  init_mode               attractor           attractor
+  init_perturb            0.1                 0.1    (unused for attractor mode)
+  spinup_steps            1000                500
+  spinup time             20.0                10.0   (spinup_steps * dt)
+  rmse_max                10                  10     (divergence cutoff)
+
+  Metrics are reported after spin-up: only posterior DA steps with
+  time index > spinup_steps contribute to mean spin-up RMSE.
+
+6. METHOD-SPECIFIC PARAMETERS (single_METHOD runs)
+--------------------------------------------------------------------------------
+
+  EnSF (original score-based filter, single reverse-diffusion DA step)
+  -----------------------------------------------------------------
+                          LINEAR              ATAN
+  ensemble_size           20                 100
+  Nt_SDE                  200                 200
+  solver_type             0 (SDE_euler)       0 (SDE_euler)
+  gm_var_ratio            0.0                 0.0
+  inflation               1.0                 1.0
+  eps_a                   0.1                 0.2
+  eps_b                   0.15                0.15
+  noise schedule          linear VP-SDE       linear VP-SDE
+
+  LETKF
+  -----------------------------------------------------------------
+                          LINEAR              ATAN
+  ensemble_size           20                  20
+  inflation               1.15                1.2
+  r_loc (localization)    2.0                 2.0
+
+  IEnSF (N_iter = 1) + optional ULA refinement
+  -----------------------------------------------------------------
+                          LINEAR              ATAN
+  ensemble_size           100                 100
+  Nt_SDE                  200                 200
+  var_split               1.0                 1.0
+  eps_a / eps_b           0.001 / 0.001       0.001 / 0.001
+  inflation               0.9                 0.9
+  r_loc                   2.0                 2.0
+  N_iter                  1                   1
+  eta1 / eta2             0.5 / 0.5           0.5 / 0.5
+  mode                    legacy              legacy
+  likelihood_diag_blend   0.0                 0.0
+  rtps_relax              0.3                 0.3
+  ns_type                 linear              linear
+  solver_type             0 (SDE_euler)       0 (SDE_euler)
+  ULA steps               10                  10
+  ULA step_size           1e-3                1e-3
+  ULA temper_tau          1.0                 1.0
+
+  IEnSF records RMSE at two stages per DA cycle:
+    - after iensf_update  (da_stage['rmse_iensf'], etc.)
+    - after ULA refine    (da_stage['rmse_ula'], etc.)
+
+7. EVALUATION AND OUTPUT
+--------------------------------------------------------------------------------
+  - RMSE computed from ensemble mean vs true state.
+  - Split into observed / unobserved dimension subsets (obs_index mask).
+  - Incomplete repetitions (max time < N_step - 1) are excluded from
+    comparison plots (compare_rmse.ipynb).
+  - Single-run results saved under each method folder:
+      results_EnSF/result_0.npy
+      results_LETKF/result_0.npy
+      results_IEnSF_{ns_type}_{mode}_iter{N_iter}/result_0.npy
+
+8. FILE LOCATIONS
+--------------------------------------------------------------------------------
+  Problem settings:     linear/param_problem.csv, atan/param_problem.csv
+  Method parameters:    {case}/single_{METHOD}/param_*.csv
+  Initialization code:  review_utils.py  (init_ensemble, load_problem_extras)
+  Comparison plots:     linear/plot/compare_rmse.ipynb
+                        atan/plot/compare_rmse.ipynb
+
+================================================================================

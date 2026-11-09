@@ -1,0 +1,2 @@
+obs_sigma,obs_gap,dt,N_step,run_up2,dim_x,shock_dir,state_init_dir,init_mode,init_perturb,spinup_steps,rmse_max
+0.1,10,0.02,1500,10,1000,,../data,attractor,0.1,1000,10
